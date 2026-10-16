@@ -11432,8 +11432,15 @@ fn matches_remote_location(
     requested: &RemoteConnectionOptions,
 ) -> bool {
     match (connection, requested) {
-        (RemoteConnectionOptions::Ssh(_), RemoteConnectionOptions::Ssh(_)) => {
-            connection.identity() == requested.identity()
+        (RemoteConnectionOptions::Ssh(_), RemoteConnectionOptions::Ssh(ssh)) => {
+            let mut connection_identity = connection.identity();
+            // A request without extra ssh args reuses a workspace opened with any.
+            if ssh.extra_args.is_empty()
+                && let RemoteConnectionIdentity::Ssh { extra_args, .. } = &mut connection_identity
+            {
+                *extra_args = Cow::Borrowed(&[]);
+            }
+            connection_identity == requested.identity()
         }
         (RemoteConnectionOptions::Wsl(connection), RemoteConnectionOptions::Wsl(requested)) => {
             // The WSL username is not consistently populated in the workspace location, so ignore it for now.
@@ -13231,6 +13238,59 @@ mod tests {
     use settings::{SettingsStore, SplicingVec};
     use util::path;
     use util::rel_path::rel_path;
+
+    #[test]
+    fn test_matches_remote_location_ssh() {
+        let ssh = |host: &str, username: Option<&str>, port: Option<u16>, extra_args: &[&str]| {
+            RemoteConnectionOptions::Ssh(remote::SshConnectionOptions {
+                host: host.into(),
+                username: username.map(str::to_string),
+                port,
+                extra_args: extra_args
+                    .iter()
+                    .map(|argument| argument.to_string())
+                    .collect(),
+                ..Default::default()
+            })
+        };
+        let first_config = ["-F", "/vm-1/ssh_config"];
+        let second_config = ["-F", "/vm-2/ssh_config"];
+        let no_args: [&str; 0] = [];
+
+        for (workspace_args, requested_args, expected) in [
+            (&first_config[..], &first_config[..], true),
+            (&first_config[..], &second_config[..], false),
+            (&first_config[..], &no_args[..], true),
+            (&no_args[..], &first_config[..], false),
+            (&no_args[..], &no_args[..], true),
+        ] {
+            assert_eq!(
+                matches_remote_location(
+                    &ssh("vm", None, None, workspace_args),
+                    &ssh("vm", None, None, requested_args),
+                ),
+                expected,
+                "workspace args: {workspace_args:?}, requested args: {requested_args:?}",
+            );
+        }
+
+        let workspace_remote = ssh("vm", Some("user"), Some(22), &first_config);
+        for (host, username, port, expected) in [
+            ("vm", "user", 22, true),
+            ("other", "user", 22, false),
+            ("vm", "root", 22, false),
+            ("vm", "user", 2222, false),
+        ] {
+            assert_eq!(
+                matches_remote_location(
+                    &workspace_remote,
+                    &ssh(host, Some(username), Some(port), &[]),
+                ),
+                expected,
+                "requested remote: {username}@{host}:{port}",
+            );
+        }
+    }
 
     #[test]
     fn test_render_window_title_format_omits_empty_segments() {
