@@ -10841,8 +10841,11 @@ fn workspace_is_at_location(
             SerializedWorkspaceLocation::Remote(workspace_remote),
             SerializedWorkspaceLocation::Remote(remote),
         ) => match (workspace_remote, remote) {
-            (RemoteConnectionOptions::Ssh(_), RemoteConnectionOptions::Ssh(_)) => {
+            (RemoteConnectionOptions::Ssh(workspace_ssh), RemoteConnectionOptions::Ssh(ssh)) => {
+                // Different extra ssh args, such as another `-F` config, can reach another
+                // machine under the same host name. A location without any matches all.
                 same_remote_connection_identity(Some(workspace_remote), Some(remote))
+                    && (ssh.extra_args.is_empty() || ssh.extra_args == workspace_ssh.extra_args)
             }
             (
                 RemoteConnectionOptions::Wsl(workspace_remote),
