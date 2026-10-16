@@ -8,6 +8,8 @@ pub enum RemoteConnectionIdentity<'a> {
         host: Cow<'a, str>,
         username: Option<Cow<'a, str>>,
         port: Option<u16>,
+        /// Another `-F` config can reach another machine under the same host name.
+        extra_args: Cow<'a, [String]>,
     },
     Wsl {
         distro_name: Cow<'a, str>,
@@ -28,10 +30,12 @@ impl RemoteConnectionIdentity<'_> {
                 host,
                 username,
                 port,
+                extra_args,
             } => RemoteConnectionIdentity::Ssh {
                 host: Cow::Owned(host.into_owned()),
                 username: username.map(|username| Cow::Owned(username.into_owned())),
                 port,
+                extra_args: Cow::Owned(extra_args.into_owned()),
             },
             Self::Wsl { distro_name, user } => RemoteConnectionIdentity::Wsl {
                 distro_name: Cow::Owned(distro_name.into_owned()),
@@ -57,6 +61,7 @@ impl<'a> From<&'a RemoteConnectionOptions> for RemoteConnectionIdentity<'a> {
                 host: options.host.to_cow(),
                 username: options.username.as_deref().map(Cow::Borrowed),
                 port: options.port,
+                extra_args: Cow::Borrowed(&options.extra_args),
             },
             RemoteConnectionOptions::Wsl(options) => Self::Wsl {
                 distro_name: Cow::Borrowed(&options.distro_name),
@@ -125,6 +130,19 @@ mod tests {
         });
 
         assert_ne!(left.identity(), right.identity());
+
+        let with_extra_args = |extra_args: &[&str]| {
+            RemoteConnectionOptions::Ssh(SshConnectionOptions {
+                host: "example.com".into(),
+                extra_args: extra_args.iter().map(|arg| arg.to_string()).collect(),
+                ..Default::default()
+            })
+        };
+        let first = with_extra_args(&["-F", "/vm-1/ssh_config"]);
+        let second = with_extra_args(&["-F", "/vm-2/ssh_config"]);
+        let without = with_extra_args(&[]);
+        assert_ne!(first.identity(), second.identity());
+        assert_ne!(first.identity(), without.identity());
     }
 
     #[test]

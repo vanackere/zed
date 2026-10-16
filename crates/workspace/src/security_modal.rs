@@ -571,6 +571,7 @@ fn remote_host_label(remote_host: &RemoteConnectionIdentity<'_>) -> String {
             host,
             username,
             port,
+            ..
         } => (
             username.as_deref(),
             match port {
